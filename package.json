@@ -1,0 +1,22 @@
+{
+  "name": "nemufoto",
+  "version": "1.0.0",
+  "description": "Temukan fotomu di album Google Drive, GoTag.me, atau upload langsung",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently \"node server.js\" \"vite\"",
+    "build": "vite build",
+    "preview": "vite preview",
+    "server": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "node-fetch": "^3.3.2",
+    "sharp": "^0.35.3"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0",
+    "vite": "^6.3.0"
+  }
+}
