@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>NemuFoto — Cari Wajahmu di Album Foto</title>
-  <meta name="description" content="Upload foto wajah, masukkan link GoTag.me atau Google Drive, dan temukan fotomu secara otomatis." />
+  <meta name="description" content="Upload foto wajah, masukkan link album, dan temukan fotomu otomatis." />
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -12,110 +12,181 @@
   <script defer src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1/dist/face-api.js"></script>
   <link rel="stylesheet" href="/css/style.css" />
 </head>
-<body>
+<body class="theme-black">
+  <!-- Top Navigation -->
   <header class="header">
-    <div class="container">
+    <div class="header-inner">
       <a href="/" class="logo">
-        <img src="/favicon.svg" alt="NemuFoto" class="logo-icon" />
+        <div class="logo-box">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="8" r="4"/><path d="M6 20v-2a6 6 0 0 1 12 0v2"/><circle cx="19" cy="11" r="2"/></svg>
+        </div>
         <span class="logo-text">NemuFoto</span>
       </a>
+
+      <!-- Status Indicator -->
+      <div class="status-pill" id="statusBar">
+        <span class="status-dot"></span>
+        <span class="status-text" id="statusText">Menyiapkan AI...</span>
+      </div>
     </div>
   </header>
 
-  <main class="container main">
-    <!-- Status -->
-    <div class="status-bar" id="statusBar">
-      <span class="status-dot"></span>
-      <span class="status-text" id="statusText">Menyiapkan model AI...</span>
+  <!-- Collapsed Mini Control Bar (Shown when search is active/completed) -->
+  <div class="compact-bar-wrap" id="compactBarWrap" style="display:none;">
+    <div class="compact-bar">
+      <div class="compact-left">
+        <div class="mini-avatar" id="miniAvatar">
+          <canvas id="miniFaceCanvas"></canvas>
+        </div>
+        <div class="compact-meta">
+          <span class="compact-title" id="compactSourceLabel">GoTag.me</span>
+          <span class="compact-sub" id="compactMatchLabel">Min 68% Match</span>
+        </div>
+      </div>
+      <div class="compact-right">
+        <button class="btn-compact" id="btnToggleConfig" type="button">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+          <span id="toggleConfigText">Ubah Sumber</span>
+        </button>
+        <button class="btn-compact btn-accent" id="btnRescan" type="button">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+          <span>Scan Ulang</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <main class="main-container">
+    <!-- Setup / Configuration Card -->
+    <section class="setup-card" id="setupCard">
+      <div class="setup-grid">
+        <!-- Col 1: Face Photo -->
+        <div class="setup-col">
+          <div class="col-header">
+            <span class="step-num">1</span>
+            <h3>Foto Wajahmu</h3>
+          </div>
+
+          <div class="face-dropzone" id="faceArea">
+            <div class="face-preview" id="facePreview" style="display:none;">
+              <canvas id="faceCanvas"></canvas>
+              <button class="btn-remove-face" id="removeFace" type="button" title="Hapus foto">✕</button>
+            </div>
+            <div class="face-prompt" id="facePrompt">
+              <div class="upload-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M6 20v-2a6 6 0 0 1 12 0v2"/></svg>
+              </div>
+              <span class="upload-title">Upload Selfie / Wajah</span>
+              <span class="upload-hint">Klik atau drag & drop foto ke sini</span>
+            </div>
+            <input type="file" id="faceInput" accept="image/*" hidden />
+          </div>
+          <div class="face-msg" id="faceMsg" style="display:none;"></div>
+
+          <div class="slider-box" id="sliderRow">
+            <div class="slider-labels">
+              <span>Minimal Kecocokan</span>
+              <strong id="sliderVal">68%</strong>
+            </div>
+            <input type="range" id="slider" min="50" max="85" value="68" step="3" />
+          </div>
+        </div>
+
+        <!-- Col 2: Album Source -->
+        <div class="setup-col">
+          <div class="col-header">
+            <span class="step-num">2</span>
+            <h3>Sumber Album Foto</h3>
+          </div>
+
+          <div class="tabs-nav" id="tabs">
+            <button class="tab-btn active" data-src="gotag" type="button">GoTag.me</button>
+            <button class="tab-btn" data-src="drive" type="button">Google Drive</button>
+            <button class="tab-btn" data-src="upload" type="button">Upload File</button>
+          </div>
+
+          <div class="tab-panel active" id="panelGotag">
+            <input type="url" class="text-input" id="gotagUrl" placeholder="Paste link gotag.me/photos/..." />
+            <p class="input-note">Contoh: https://gotag.me/photos/120617-kemlu-run-2026/1</p>
+          </div>
+
+          <div class="tab-panel" id="panelDrive">
+            <input type="url" class="text-input" id="driveUrl" placeholder="Paste link folder Google Drive publik..." />
+            <p class="input-note">Pastikan folder di-set: "Siapa saja yang memiliki link"</p>
+          </div>
+
+          <div class="tab-panel" id="panelUpload">
+            <div class="files-dropzone" id="dropArea">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+              <span>Pilih atau tarik foto-foto album ke sini</span>
+            </div>
+            <input type="file" id="filesInput" accept="image/*" multiple hidden />
+            <div class="file-count-badge" id="fileInfo" style="display:none;">
+              <span id="fileCount">0 foto dipilih</span>
+              <button class="btn-link-clear" id="clearFiles" type="button">Hapus</button>
+            </div>
+          </div>
+
+          <!-- Primary Start Button -->
+          <button class="btn-primary-scan" id="scanBtn" type="button" disabled>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <span>Mulai Cari Fotomu</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Scanning Progress Bar (Clean banner) -->
+    <div class="scan-progress-box" id="progress" style="display:none;">
+      <div class="progress-info">
+        <div class="progress-left">
+          <div class="pulse-indicator"></div>
+          <span class="progress-label" id="progressStatusLabel">Sedang memindai wajah...</span>
+        </div>
+        <div class="progress-right">
+          <span class="progress-numbers" id="progressText">0 / 0</span>
+          <button class="btn-stop-scan" id="stopBtn" type="button">Berhenti</button>
+        </div>
+      </div>
+      <div class="progress-track">
+        <div class="progress-bar-fill" id="progressFill"></div>
+      </div>
     </div>
 
-    <!-- Row 1: Face Upload -->
-    <section class="card">
-      <h2 class="card-title">Foto Wajah</h2>
-      <div class="face-area" id="faceArea">
-        <div class="face-preview" id="facePreview" style="display:none;">
-          <canvas id="faceCanvas"></canvas>
-          <button class="btn-x" id="removeFace" type="button">✕</button>
+    <!-- Results Section (Main Screen Gallery) -->
+    <section class="gallery-section" id="results" style="display:none;">
+      <div class="gallery-header">
+        <div>
+          <h2 class="gallery-title">Foto Ditemukan</h2>
+          <p class="gallery-subtitle">Klik pada foto untuk melihat ukuran penuh dan mendownload</p>
         </div>
-        <div class="face-prompt" id="facePrompt">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="8" r="4"/><path d="M6 20v-2a6 6 0 0 1 12 0v2"/></svg>
-          <span>Klik atau tarik foto wajah ke sini</span>
-        </div>
-        <input type="file" id="faceInput" accept="image/*" hidden />
-      </div>
-      <div class="face-msg" id="faceMsg" style="display:none;"></div>
-      <div class="slider-row" id="sliderRow" style="display:none;">
-        <label>Minimal Kecocokan <strong id="sliderVal">68%</strong></label>
-        <input type="range" id="slider" min="50" max="85" value="68" step="3" />
-      </div>
-    </section>
-
-    <!-- Row 2: Source + Scan -->
-    <section class="card">
-      <h2 class="card-title">Sumber Foto</h2>
-      <div class="tabs" id="tabs">
-        <button class="tab active" data-src="gotag" type="button">GoTag.me</button>
-        <button class="tab" data-src="drive" type="button">Google Drive</button>
-        <button class="tab" data-src="upload" type="button">Upload File</button>
+        <span class="found-pill" id="resultCount">0 foto</span>
       </div>
 
-      <div class="panel active" id="panelGotag">
-        <input type="url" class="input" id="gotagUrl" placeholder="Paste link gotag.me/photos/..." />
-      </div>
-
-      <div class="panel" id="panelDrive">
-        <input type="url" class="input" id="driveUrl" placeholder="Paste link folder Google Drive..." />
-        <p class="hint">Folder harus diset ke "Siapa saja yang memiliki link"</p>
-      </div>
-
-      <div class="panel" id="panelUpload">
-        <div class="drop-area" id="dropArea">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-          <span>Klik atau tarik foto-foto ke sini</span>
-        </div>
-        <input type="file" id="filesInput" accept="image/*" multiple hidden />
-        <div class="file-info" id="fileInfo" style="display:none;">
-          <span id="fileCount">0 foto</span>
-          <button class="link-btn" id="clearFiles" type="button">Hapus</button>
-        </div>
-      </div>
-
-      <button class="btn-scan" id="scanBtn" type="button" disabled>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-        Cari Wajah
-      </button>
-
-      <div class="progress" id="progress" style="display:none;">
-        <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
-        <div class="progress-row">
-          <span id="progressText">0 / 0</span>
-          <button class="link-btn" id="stopBtn" type="button">Stop</button>
-        </div>
-      </div>
-    </section>
-
-    <!-- Results -->
-    <section class="results" id="results" style="display:none;">
-      <div class="results-head">
-        <h2 class="card-title">Hasil</h2>
-        <span class="results-count" id="resultCount">0 foto</span>
-      </div>
-      <div class="grid" id="grid"></div>
+      <div class="gallery-grid" id="grid"></div>
     </section>
   </main>
 
   <footer class="footer">
-    <p>🔒 Semua proses berjalan di browser. Tidak ada data yang disimpan ke server.</p>
+    <p>100% Privacy-First • Pemrosesan AI berjalan langsung di browsermu tanpa menyimpan foto ke server.</p>
   </footer>
 
-  <!-- Modal -->
-  <div class="modal" id="modal" style="display:none;">
-    <div class="modal-inner">
-      <button class="btn-x modal-x" id="modalClose" type="button">✕</button>
-      <img id="modalImg" src="" alt="" />
-      <div class="modal-bar">
-        <span id="modalConf"></span>
-        <a class="btn-dl" id="modalDl" href="" download target="_blank">Download Asli</a>
+  <!-- Lightbox Modal Fullscreen -->
+  <div class="lightbox-modal" id="modal" style="display:none;">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <button class="modal-btn-close" id="modalClose" type="button">✕</button>
+      <div class="modal-img-wrap">
+        <img id="modalImg" src="" alt="Hasil Foto Wajah" />
+      </div>
+      <div class="modal-bottom-bar">
+        <div class="modal-badge-wrap">
+          <span class="modal-conf-badge" id="modalConf">94% Match</span>
+        </div>
+        <a class="modal-btn-download" id="modalDl" href="" download target="_blank">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <span>Download Foto Asli</span>
+        </a>
       </div>
     </div>
   </div>

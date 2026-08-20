@@ -1,19 +1,23 @@
 /**
- * ui.js — Fast Parallel Scanner with Sharp proxy & WebGL acceleration
+ * ui.js — Fast Parallel Scanner with Minimalist Black Theme & Collapsible UI
  */
 
 import { createImageFromFile, showToast, distanceToConfidence, confidenceToDistanceThreshold, loadImage } from './utils.js';
 import { extractDescriptor, scanImage, drawFaceBox } from './faceEngine.js';
+import { startKeepAlive, stopKeepAlive } from './keepAlive.js';
 import * as driveSource from './sources/driveSource.js';
 import * as gotagSource from './sources/gotagSource.js';
 
 // ─── State ─────────────────────────────────────────
 let refDescriptor = null;
+let refImageElement = null;
+let refDetection = null;
 let uploadedFiles = [];
 let isScanning = false;
 let stopRequested = false;
 let scanResults = [];
 let activeTab = 'gotag';
+let isConfigOpen = true;
 
 // Concurrency level for parallel scanning
 const CONCURRENCY = 4;
@@ -27,6 +31,17 @@ export function bindDOM() {
   el.statusDot = document.querySelector('.status-dot');
   el.statusText = $('statusText');
 
+  // Setup Card & Collapsed Bar
+  el.setupCard = $('setupCard');
+  el.compactBarWrap = $('compactBarWrap');
+  el.miniFaceCanvas = $('miniFaceCanvas');
+  el.compactSourceLabel = $('compactSourceLabel');
+  el.compactMatchLabel = $('compactMatchLabel');
+  el.btnToggleConfig = $('btnToggleConfig');
+  el.toggleConfigText = $('toggleConfigText');
+  el.btnRescan = $('btnRescan');
+
+  // Face elements
   el.faceArea = $('faceArea');
   el.facePrompt = $('facePrompt');
   el.facePreview = $('facePreview');
@@ -38,6 +53,7 @@ export function bindDOM() {
   el.slider = $('slider');
   el.sliderVal = $('sliderVal');
 
+  // Source inputs
   el.gotagUrl = $('gotagUrl');
   el.driveUrl = $('driveUrl');
   el.dropArea = $('dropArea');
@@ -46,16 +62,20 @@ export function bindDOM() {
   el.fileCount = $('fileCount');
   el.clearFiles = $('clearFiles');
 
+  // Action & Progress
   el.scanBtn = $('scanBtn');
   el.progress = $('progress');
   el.progressFill = $('progressFill');
   el.progressText = $('progressText');
+  el.progressStatusLabel = $('progressStatusLabel');
   el.stopBtn = $('stopBtn');
 
+  // Gallery Results
   el.results = $('results');
   el.resultCount = $('resultCount');
   el.grid = $('grid');
 
+  // Modal
   el.modal = $('modal');
   el.modalImg = $('modalImg');
   el.modalClose = $('modalClose');
@@ -78,10 +98,23 @@ export function bindEvents() {
 
   el.slider.addEventListener('input', () => {
     el.sliderVal.textContent = `${el.slider.value}%`;
+    if (el.compactMatchLabel) {
+      el.compactMatchLabel.textContent = `Min ${el.slider.value}% Match`;
+    }
+  });
+
+  // Toggle Config Card (Accordion / Fold)
+  el.btnToggleConfig.addEventListener('click', () => {
+    toggleSetupCard();
+  });
+
+  // Rescan from compact bar
+  el.btnRescan.addEventListener('click', () => {
+    startScan();
   });
 
   // Tabs
-  document.querySelectorAll('.tab').forEach(t => {
+  document.querySelectorAll('.tab-btn').forEach(t => {
     t.addEventListener('click', () => switchTab(t.dataset.src));
   });
 
@@ -97,7 +130,11 @@ export function bindEvents() {
 
   // Modal
   el.modalClose.addEventListener('click', closeModal);
-  el.modal.addEventListener('click', e => { if (e.target === el.modal) closeModal(); });
+  el.modal.addEventListener('click', e => {
+    if (e.target === el.modal || e.target.classList.contains('modal-backdrop')) {
+      closeModal();
+    }
+  });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
 }
 
@@ -107,7 +144,7 @@ function setupDrop(elem, onDrop) {
   elem.addEventListener('drop', e => { e.preventDefault(); elem.classList.remove('over'); onDrop(e.dataTransfer.files); });
 }
 
-// ─── Face ──────────────────────────────────────────
+// ─── Face Processing ───────────────────────────────
 async function handleFace(file) {
   try {
     setStatus('Mendeteksi wajah...', 'scanning');
@@ -115,19 +152,27 @@ async function handleFace(file) {
     const result = await extractDescriptor(image);
 
     if (!result) {
-      showFaceMsg('Wajah tidak terdeteksi. Coba foto selfie lain.', false);
+      showFaceMsg('Wajah tidak terdeteksi. Coba foto selfie yang lebih jelas.', false);
       setStatus('Siap', 'ready');
       return;
     }
 
     refDescriptor = result.descriptor;
+    refImageElement = image;
+    refDetection = result.detection;
+
+    // Draw main face preview
     drawFaceBox(el.faceCanvas, image, result.detection);
+
+    // Draw mini avatar for collapsed bar
+    drawMiniFace(el.miniFaceCanvas, image, result.detection);
+
     el.facePrompt.style.display = 'none';
     el.facePreview.style.display = 'block';
     el.faceArea.classList.add('done');
     el.sliderRow.style.display = 'flex';
-    showFaceMsg('Wajah terdeteksi ✓', true);
-    setStatus('Wajah siap — masukkan link lalu klik Cari Wajah', 'ready');
+    showFaceMsg('Wajah berhasil terdeteksi ✓', true);
+    setStatus('Wajah siap — pilih sumber lalu mulai cari foto', 'ready');
     updateBtn();
   } catch (err) {
     showToast('Gagal memproses foto: ' + err.message, 'error');
@@ -135,8 +180,28 @@ async function handleFace(file) {
   }
 }
 
+function drawMiniFace(canvas, image, detection) {
+  if (!canvas || !detection) return;
+  const ctx = canvas.getContext('2d');
+  const box = detection.box;
+  const size = Math.max(box.width, box.height) * 1.3;
+  const centerX = box.x + box.width / 2;
+  const centerY = box.y + box.height / 2;
+  const sx = Math.max(0, centerX - size / 2);
+  const sy = Math.max(0, centerY - size / 2);
+  const sWidth = Math.min(image.naturalWidth - sx, size);
+  const sHeight = Math.min(image.naturalHeight - sy, size);
+
+  canvas.width = 80;
+  canvas.height = 80;
+  ctx.clearRect(0, 0, 80, 80);
+  ctx.drawImage(image, sx, sy, sWidth, sHeight, 0, 0, 80, 80);
+}
+
 function clearFace() {
   refDescriptor = null;
+  refImageElement = null;
+  refDetection = null;
   el.facePrompt.style.display = '';
   el.facePreview.style.display = 'none';
   el.faceArea.classList.remove('done');
@@ -152,11 +217,46 @@ function showFaceMsg(text, ok) {
   el.faceMsg.textContent = text;
 }
 
+// ─── Setup Card Collapse / Expand ───────────────────
+function collapseSetupCard() {
+  isConfigOpen = false;
+  el.setupCard.classList.add('hidden');
+  el.compactBarWrap.style.display = 'block';
+  el.toggleConfigText.textContent = 'Ubah Sumber';
+  updateCompactLabels();
+}
+
+function expandSetupCard() {
+  isConfigOpen = true;
+  el.setupCard.classList.remove('hidden');
+  el.toggleConfigText.textContent = 'Tutup Pengaturan';
+}
+
+function toggleSetupCard() {
+  if (el.setupCard.classList.contains('hidden')) {
+    expandSetupCard();
+  } else {
+    collapseSetupCard();
+  }
+}
+
+function updateCompactLabels() {
+  if (activeTab === 'gotag') {
+    const parsed = gotagSource.parseGotagLink(el.gotagUrl.value.trim());
+    el.compactSourceLabel.textContent = parsed ? `GoTag: ${parsed.eventSlug}` : 'GoTag.me Album';
+  } else if (activeTab === 'drive') {
+    el.compactSourceLabel.textContent = 'Google Drive Album';
+  } else {
+    el.compactSourceLabel.textContent = `${uploadedFiles.length} Foto Upload`;
+  }
+  el.compactMatchLabel.textContent = `Min ${el.slider.value}% Match`;
+}
+
 // ─── Tabs ──────────────────────────────────────────
 function switchTab(src) {
   activeTab = src;
-  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.src === src));
-  document.querySelectorAll('.panel').forEach(p => {
+  document.querySelectorAll('.tab-btn').forEach(t => t.classList.toggle('active', t.dataset.src === src));
+  document.querySelectorAll('.tab-panel').forEach(p => {
     p.classList.toggle('active', p.id === `panel${src.charAt(0).toUpperCase() + src.slice(1)}`);
   });
   updateBtn();
@@ -212,14 +312,25 @@ async function startScan() {
 
   isScanning = true;
   stopRequested = false;
+  scanResults = [];
   const minConfidence = parseInt(el.slider.value) || 68;
   const threshold = confidenceToDistanceThreshold(minConfidence);
 
+  // Automatically fold setup card so main page focuses on results gallery
+  collapseSetupCard();
+
   el.scanBtn.disabled = true;
   el.progress.style.display = 'flex';
-  el.results.style.display = 'none';
+  el.results.style.display = 'flex';
   el.grid.innerHTML = '';
-  setStatus(`Memulai scanning (Min ${minConfidence}% Match, Parallel 4x)...`, 'scanning');
+  el.resultCount.textContent = '0 foto';
+  if (el.progressStatusLabel) {
+    el.progressStatusLabel.textContent = `Memindai foto (Min ${minConfidence}% Match)...`;
+  }
+  setStatus(`Scanning (Min ${minConfidence}% Match, Parallel 4x)...`, 'scanning');
+
+  // Activate keep-alive so background tab throttling & sleep are prevented
+  await startKeepAlive();
 
   try {
     if (activeTab === 'gotag') {
@@ -231,11 +342,12 @@ async function startScan() {
     }
   } catch (err) {
     showToast('Error: ' + err.message, 'error');
+  } finally {
+    isScanning = false;
+    el.scanBtn.disabled = false;
+    showDone();
+    await stopKeepAlive();
   }
-
-  isScanning = false;
-  el.scanBtn.disabled = false;
-  showDone();
 }
 
 // ─── GoTag Scan (Parallel + Fast Sharp Downscale) ────
@@ -247,20 +359,22 @@ async function scanGoTag(threshold) {
     return;
   }
 
-  setStatus('Mengambil info album...', 'scanning');
+  if (el.progressStatusLabel) el.progressStatusLabel.textContent = 'Mengambil info album GoTag.me...';
   const info = await gotagSource.fetchEventPhotos(parsed.eventSlug, 1);
   const totalPages = info.totalPages;
   const totalPhotos = info.totalPhotos;
   setStatus(`Album: ${info.eventTitle} (${totalPhotos.toLocaleString()} foto)`, 'scanning');
 
   let scanned = 0;
-  const batchPageSize = 8; // 8 pages (~96 photos) per batch
+  const batchPageSize = 8;
 
   for (let page = 1; page <= totalPages; page += batchPageSize) {
     if (stopRequested) break;
 
     const endPage = Math.min(page + batchPageSize - 1, totalPages);
-    setStatus(`Scanning halaman ${page}-${endPage} dari ${totalPages}...`, 'scanning');
+    if (el.progressStatusLabel) {
+      el.progressStatusLabel.textContent = `Memindai halaman ${page}-${endPage} dari ${totalPages}...`;
+    }
 
     let photos = [];
     try {
@@ -276,12 +390,11 @@ async function scanGoTag(threshold) {
 
     if (photos.length === 0 && page > 1) break;
 
-    // Process this batch of photos concurrently with 4 workers
+    // Process batch concurrently
     await runParallelPool(photos, CONCURRENCY, async (photo) => {
       if (stopRequested) return;
 
       try {
-        // High resolution (720px) for clear face landmarks on full-body / distant runners
         const img = await loadImage(photo.medium, 720);
         await matchAndAdd(img, photo.original, threshold);
       } catch {}
@@ -301,7 +414,7 @@ async function scanDrive(threshold) {
     return;
   }
 
-  setStatus('Mengambil daftar file Google Drive...', 'scanning');
+  if (el.progressStatusLabel) el.progressStatusLabel.textContent = 'Membaca file Google Drive...';
   const files = await driveSource.listImages(folderId);
   if (!files.length) {
     showToast('Folder kosong atau tidak ada foto', 'error');
@@ -328,7 +441,7 @@ async function scanDrive(threshold) {
 
 // ─── Upload Scan (Parallel) ──────────────────────────
 async function scanUploads(threshold) {
-  setStatus(`Scanning ${uploadedFiles.length} foto secara paralel...`, 'scanning');
+  if (el.progressStatusLabel) el.progressStatusLabel.textContent = `Memindai ${uploadedFiles.length} foto lokal...`;
 
   let scanned = 0;
   await runParallelPool(uploadedFiles, CONCURRENCY, async (file) => {
@@ -353,14 +466,12 @@ async function matchAndAdd(img, originalUrl, threshold) {
     const result = { imgSrc: img.src, originalUrl, confidence: conf, distance: best.distance };
     scanResults.push(result);
     renderResults();
-    if (el.results.style.display === 'none') el.results.style.display = 'flex';
-    el.resultCount.textContent = `${scanResults.length} foto ditemukan`;
+    el.resultCount.textContent = `${scanResults.length} foto`;
   }
 }
 
 // ─── Render Results (Sorted by Highest Confidence) ──
 function renderResults() {
-  // Sort descending by confidence
   scanResults.sort((a, b) => b.confidence - a.confidence);
   el.grid.innerHTML = '';
   for (const res of scanResults) {
@@ -379,13 +490,13 @@ function showDone() {
   el.progress.style.display = 'none';
   if (scanResults.length === 0) {
     el.results.style.display = 'flex';
-    el.grid.innerHTML = '<div class="no-results">🔍 Wajah tidak ditemukan. Coba gunakan foto selfie yang lebih jelas.</div>';
+    el.grid.innerHTML = '<div class="no-match-box">🔍 Tidak ada wajah yang cocok ditemukan. Coba turunkan slider kecocokan atau gunakan foto selfie lain.</div>';
     el.resultCount.textContent = '0 foto';
   } else {
     renderResults();
   }
   const msg = stopRequested
-    ? `Dihentikan — ${scanResults.length} foto cocok ditemukan`
+    ? `Dihentikan — ${scanResults.length} foto ditemukan`
     : `Selesai — ${scanResults.length} foto cocok ditemukan`;
   setStatus(msg, 'ready');
   showToast(msg, scanResults.length > 0 ? 'success' : 'info');
@@ -394,13 +505,13 @@ function showDone() {
 // ─── Result Card ────────────────────────────────────
 function addCard(result) {
   const card = document.createElement('div');
-  card.className = 'r-card';
+  card.className = 'photo-card';
   card.innerHTML = `
-    <img src="${result.imgSrc}" alt="" loading="lazy" />
-    <div class="r-overlay">
-      <span class="r-conf">${result.confidence}% Match</span>
-      <a class="r-dl" href="${result.originalUrl}" download target="_blank" onclick="event.stopPropagation()" title="Download Asli">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    <img src="${result.imgSrc}" alt="Foto Wajah Cocok" loading="lazy" />
+    <div class="card-overlay">
+      <span class="match-badge">${result.confidence}% Match</span>
+      <a class="btn-card-dl" href="${result.originalUrl}" download target="_blank" onclick="event.stopPropagation()" title="Download Asli">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
       </a>
     </div>
   `;
