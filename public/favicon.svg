@@ -1,13 +1,7 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
-  <rect width="100" height="100" rx="24" fill="#0f172a"/>
-  <!-- Camera shape -->
-  <rect x="22" y="32" width="56" height="44" rx="10" stroke="#38bdf8" stroke-width="5"/>
-  <path d="M38 32 L44 23 H56 L62 32" stroke="#38bdf8" stroke-width="5" stroke-linejoin="round"/>
-  <!-- Lens with smile / face finder -->
-  <circle cx="50" cy="54" r="14" stroke="#38bdf8" stroke-width="5"/>
-  <circle cx="46" cy="51" r="2" fill="#38bdf8"/>
-  <circle cx="54" cy="51" r="2" fill="#38bdf8"/>
-  <path d="M46 56 Q50 60 54 56" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round"/>
-  <!-- Flash dot -->
-  <circle cx="67" cy="40" r="3" fill="#38bdf8"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" rx="124" fill="#c4b5fd" />
+  <!-- Camera prism with focal lens -->
+  <rect x="150" y="195" width="212" height="150" rx="36" fill="none" stroke="#1e1b4b" stroke-width="36" stroke-linejoin="round" />
+  <circle cx="256" cy="270" r="42" fill="none" stroke="#1e1b4b" stroke-width="36" />
+  <path d="M 215 195 L 235 160 L 277 160 L 297 195" fill="none" stroke="#1e1b4b" stroke-width="36" stroke-linejoin="round" stroke-linecap="round" />
 </svg>
